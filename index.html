@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>薪資條產生器</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  body { font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; background:#f4f5f7; margin:0; padding:24px; color:#222; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { color:#666; font-size:13px; margin-bottom:20px; }
+  .upload-box { background:#fff; border:2px dashed #ccc; border-radius:14px; padding:24px; text-align:center; margin-bottom:20px; }
+  .upload-box input { display:none; }
+  .upload-label { display:inline-block; padding:10px 20px; background:#222; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; }
+  .file-name { margin-top:10px; font-size:13px; color:#555; }
+  .controls { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  select { padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px; min-width:120px; background:#fff; }
+  select:disabled { background:#f0f0f0; color:#aaa; }
+  .card { background:#fff; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:24px; }
+  .card-head { display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:14px; }
+  .card-head h2 { margin:0; font-size:18px; }
+  .card-head span { color:#666; font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #eee; }
+  th { color:#888; font-weight:600; font-size:12px; }
+  td.amt, th.amt { text-align:right; }
+  tfoot td { font-weight:700; border-top:2px solid #222; border-bottom:none; padding-top:12px; }
+  .empty { color:#999; text-align:center; padding:30px 0; }
+  .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:6px; background:#eef2ff; color:#3949ab; margin-left:6px; }
+  .actions { margin-top:16px; text-align:right; display:flex; gap:10px; justify-content:flex-end; }
+  button { padding:8px 16px; border-radius:8px; border:none; background:#222; color:#fff; cursor:pointer; font-size:13px; }
+  button:disabled { background:#ccc; cursor:not-allowed; }
+  button.secondary { background:#fff; color:#222; border:1px solid #ccc; }
+  .hint { font-size:12px; color:#999; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>薪資條產生器</h1>
+  <div class="sub">上傳薪資總表 Excel，選擇年份、姓名與月份，自動產生個人薪資明細</div>
+
+  <div class="upload-box">
+    <label class="upload-label" for="fileInput">選擇 / 更換 Excel 檔案</label>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div class="file-name" id="fileName">尚未匯入檔案</div>
+    <div class="hint">支援工作表名稱包含「年薪資發放」，例如「2026年薪資發放」</div>
+  </div>
+
+  <div class="controls">
+    <select id="yearSel" disabled><option>年份</option></select>
+    <select id="monthSel" disabled><option>月份</option></select>
+    <select id="personSel" disabled><option>姓名</option></select>
+  </div>
+
+  <div class="card" id="payslipCard">
+    <div class="card-head">
+      <h2 id="headName">—</h2>
+      <span id="headMonth">—</span>
+    </div>
+    <div id="content"><div class="empty">請先上傳薪資總表 Excel 檔案</div></div>
+  </div>
+
+  <div class="actions">
+    <button class="secondary" id="btnPng" disabled>下載 PNG</button>
+    <button id="btnPdf" disabled>下載 PDF</button>
+  </div>
+</div>
+
+<script>
+let DATA = {}; // { year: [ {item, freq, method, person, "1月"...,"12月"} ] }
+const monthsAll = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
+const fileInput = document.getElementById("fileInput");
+const fileName = document.getElementById("fileName");
+const yearSel = document.getElementById("yearSel");
+const personSel = document.getElementById("personSel");
+const monthSel = document.getElementById("monthSel");
+const btnPng = document.getElementById("btnPng");
+const btnPdf = document.getElementById("btnPdf");
+
+fileInput.addEventListener("change", handleFile);
+
+function handleFile(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  fileName.textContent = "已匯入：" + file.name;
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    try{
+      const wb = XLSX.read(evt.target.result, {type:"array"});
+      parseWorkbook(wb);
+    }catch(err){
+      fileName.textContent = "檔案讀取失敗，請確認檔案格式";
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWorkbook(wb){
+  DATA = {};
+  wb.SheetNames.forEach(sheetName=>{
+    const m = sheetName.match(/(\d{4})\s*年薪資發放/);
+    if(!m) return;
+    const year = m[1];
+    const sheet = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:null});
+    let headerIdx = -1;
+    for(let i=0;i<rows.length;i++){
+      if(rows[i] && rows[i].includes("項目") && rows[i].includes("人員")){
+        headerIdx = i; break;
+      }
+    }
+    if(headerIdx === -1) return;
+    const header = rows[headerIdx];
+    const colIdx = {};
+    header.forEach((h,i)=>{ if(h) colIdx[String(h).trim()] = i; });
+    const records = [];
+    for(let i=headerIdx+1;i<rows.length;i++){
+      const r = rows[i];
+      if(!r) continue;
+      const person = colIdx["人員"]!==undefined ? r[colIdx["人員"]] : null;
+      if(!person) continue;
+      const rec = {
+        item: r[colIdx["項目"]] != null ? String(r[colIdx["項目"]]) : "",
+        freq: r[colIdx["頻率"]] != null ? String(r[colIdx["頻率"]]) : "",
+        method: r[colIdx["領取方式"]] != null ? String(r[colIdx["領取方式"]]) : "",
+        person: String(person)
+      };
+      monthsAll.forEach(mo=>{
+        let v = colIdx[mo]!==undefined ? r[colIdx[mo]] : null;
+        v = parseFloat(v);
+        rec[mo] = isNaN(v) ? 0 : v;
+      });
+      records.push(rec);
+    }
+    if(records.length) DATA[year] = records;
+  });
+
+  const years = Object.keys(DATA).sort();
+  if(years.length === 0){
+    fileName.textContent += " (找不到符合「XXXX年薪資發放」的工作表)";
+    return;
+  }
+  yearSel.innerHTML = "";
+  years.forEach(y=>{
+    const o = document.createElement("option"); o.value=y; o.textContent=y+"年"; yearSel.appendChild(o);
+  });
+  yearSel.disabled = false;
+  monthSel.innerHTML = "";
+  monthsAll.forEach(mo=>{ const o=document.createElement("option"); o.value=mo; o.textContent=mo; monthSel.appendChild(o); });
+  monthSel.disabled = false;
+  updatePersons();
+  render();
+}
+
+function updatePersons(){
+  const year = yearSel.value;
+  const month = monthSel.value;
+  const rows = (DATA[year] || []).filter(r => !month || Number(r[month]) > 0);
+  const persons = [...new Set(rows.map(r=>r.person))].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
+  const prev = personSel.value;
+  personSel.innerHTML = "";
+  persons.forEach(p=>{ const o=document.createElement("option"); o.value=p; o.textContent=p; personSel.appendChild(o); });
+  personSel.disabled = persons.length === 0;
+  if(persons.includes(prev)) personSel.value = prev;
+}
+
+yearSel.addEventListener("change", ()=>{ updatePersons(); render(); });
+monthSel.addEventListener("change", ()=>{ updatePersons(); render(); });
+personSel.addEventListener("change", render);
+
+function render(){
+  const year = yearSel.value;
+  const person = personSel.value;
+  const month = monthSel.value;
+  const content = document.getElementById("content");
+  if(!year || !person || !month){
+    document.getElementById("headName").textContent = "—";
+    document.getElementById("headMonth").textContent = "—";
+    content.innerHTML = "<div class=\"empty\">請先上傳薪資總表 Excel 檔案</div>";
+    btnPng.disabled = true; btnPdf.disabled = true;
+    return;
+  }
+  document.getElementById("headName").textContent = person + " 薪資條";
+  document.getElementById("headMonth").textContent = year + "年 " + month;
+  const rows = (DATA[year]||[]).filter(r=>r.person===person && Number(r[month])>0);
+  if(rows.length===0){
+    content.innerHTML = "<div class=\"empty\">此月份無薪資紀錄</div>";
+    btnPng.disabled = true; btnPdf.disabled = true;
+    return;
+  }
+  let total = 0;
+  let body = "<table><thead><tr><th>項目</th><th>頻率</th><th>領取方式</th><th class=\"amt\">金額</th></tr></thead><tbody>";
+  rows.forEach(r=>{
+    const amt = Number(r[month]);
+    total += amt;
+    body += "<tr><td>"+r.item+"</td><td><span class=\"tag\">"+r.freq+"</span></td><td>"+r.method+"</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
+  });
+  body += "</tbody><tfoot><tr><td colspan=\"3\">總額</td><td class=\"amt\">NT$ "+total.toLocaleString()+"</td></tr></tfoot></table>";
+  content.innerHTML = body;
+  btnPng.disabled = false; btnPdf.disabled = false;
+}
+
+function buildFileLabel(){
+  return (personSel.value||"員工") + "_" + (yearSel.value||"") + (monthSel.value||"") + "_薪資條";
+}
+
+btnPng.addEventListener("click", ()=>{
+  const card = document.getElementById("payslipCard");
+  html2canvas(card, {scale:2, backgroundColor:"#ffffff"}).then(canvas=>{
+    const link = document.createElement("a");
+    link.download = buildFileLabel() + ".png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+});
+
+btnPdf.addEventListener("click", ()=>{
+  const card = document.getElementById("payslipCard");
+  html2canvas(card, {scale:2, backgroundColor:"#ffffff"}).then(canvas=>{
+    const imgData = canvas.toDataURL("image/png");
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:"px", format:[canvas.width, canvas.height] });
+    pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+    pdf.save(buildFileLabel() + ".pdf");
+  });
+});
+</script>
+</body>
+</html>
