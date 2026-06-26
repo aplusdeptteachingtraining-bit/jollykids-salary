@@ -16,6 +16,11 @@
   .upload-label { display:inline-block; padding:10px 20px; background:#222; color:#fff; border-radius:8px; cursor:pointer; font-size:14px; }
   .file-name { margin-top:10px; font-size:13px; color:#555; }
   .controls { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .note-box { background:#fff; border-radius:14px; padding:16px 20px; margin-bottom:20px; box-shadow:0 2px 10px rgba(0,0,0,0.06); }
+  .note-box label { display:block; font-size:12px; color:#888; margin-bottom:6px; }
+  .note-box textarea { width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:14px; font-family:inherit; resize:vertical; min-height:48px; }
+  .note-display { margin-top:16px; padding-top:12px; border-top:1px dashed #ddd; font-size:13px; color:#555; white-space:pre-wrap; }
+  .note-display b { color:#222; }
   select { padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px; min-width:120px; background:#fff; }
   select:disabled { background:#f0f0f0; color:#aaa; }
   .card { background:#fff; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:24px; }
@@ -54,6 +59,11 @@
     <select id="personSel" disabled><option>姓名</option></select>
   </div>
 
+  <div class="note-box">
+    <label for="noteInput">備註（會顯示在薪資條上，選填）</label>
+    <textarea id="noteInput" placeholder="例如：本月含端午獎金、扣除誤餐費 100 元"></textarea>
+  </div>
+
   <div class="card" id="payslipCard">
     <div class="card-head">
       <h2 id="headName">—</h2>
@@ -79,6 +89,8 @@ const personSel = document.getElementById("personSel");
 const monthSel = document.getElementById("monthSel");
 const btnPng = document.getElementById("btnPng");
 const btnPdf = document.getElementById("btnPdf");
+const noteInput = document.getElementById("noteInput");
+noteInput.addEventListener("input", renderNote);
 
 fileInput.addEventListener("change", handleFile);
 
@@ -200,8 +212,17 @@ function render(){
     body += "<tr><td>"+r.item+"</td><td><span class=\"tag\">"+r.freq+"</span></td><td>"+r.method+"</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
   });
   body += "</tbody><tfoot><tr><td colspan=\"3\">總額</td><td class=\"amt\">NT$ "+total.toLocaleString()+"</td></tr></tfoot></table>";
+  body += "<div class=\"note-display\" id=\"noteDisplay\"></div>";
   content.innerHTML = body;
+  renderNote();
   btnPng.disabled = false; btnPdf.disabled = false;
+}
+
+function renderNote(){
+  const el = document.getElementById("noteDisplay");
+  if(!el) return;
+  const text = noteInput.value.trim();
+  el.innerHTML = text ? "<b>備註：</b>" + text.replace(/</g,"&lt;") : "";
 }
 
 function buildFileLabel(){
