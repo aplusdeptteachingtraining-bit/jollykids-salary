@@ -21,6 +21,15 @@
   .note-box textarea { width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:14px; font-family:inherit; resize:vertical; min-height:48px; }
   .note-display { margin-top:16px; padding-top:12px; border-top:1px dashed #ddd; font-size:13px; color:#555; white-space:pre-wrap; }
   .note-display b { color:#222; }
+  .extra-box { background:#fff; border-radius:14px; padding:20px; margin-bottom:20px; box-shadow:0 2px 10px rgba(0,0,0,0.06); }
+  .extra-box h3 { margin:0 0 4px; font-size:15px; }
+  .extra-hint { color:#999; font-size:12px; margin-bottom:14px; }
+  .extra-row { display:grid; grid-template-columns: 1.4fr 0.8fr 1fr 1.4fr 32px; gap:8px; align-items:center; margin-bottom:8px; }
+  .extra-row input, .extra-row select { width:100%; box-sizing:border-box; padding:7px 8px; border:1px solid #ddd; border-radius:6px; font-size:13px; font-family:inherit; }
+  .extra-row .rm { background:none; border:none; color:#bbb; font-size:16px; cursor:pointer; padding:0; }
+  .extra-row .rm:hover { color:#c0392b; }
+  .extra-add { margin-top:6px; background:#fff; color:#222; border:1px solid #ccc; padding:8px 16px; border-radius:8px; font-size:13px; cursor:pointer; }
+  .extra-tag { background:#fff3e0; color:#e65100; }
   select { padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px; min-width:120px; background:#fff; }
   select:disabled { background:#f0f0f0; color:#aaa; }
   .card { background:#fff; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:24px; }
@@ -64,6 +73,13 @@
     <textarea id="noteInput" placeholder="例如：本月含端午獎金、扣除誤餐費 100 元"></textarea>
   </div>
 
+  <div class="extra-box">
+    <h3>額外加給 / 代墊款（選填）</h3>
+    <div class="extra-hint">只對特定員工、特定月份加一筆固定金額（例如代墊費用），不會混進 Excel 的基礎薪資，獨立記錄並會加總進薪資條總額</div>
+    <div id="extraList"></div>
+    <button class="extra-add" id="btnAddExtra">+ 新增一筆額外加給</button>
+  </div>
+
   <div class="card" id="payslipCard">
     <div class="card-head">
       <h2 id="headName">—</h2>
@@ -91,6 +107,67 @@ const btnPng = document.getElementById("btnPng");
 const btnPdf = document.getElementById("btnPdf");
 const noteInput = document.getElementById("noteInput");
 noteInput.addEventListener("input", renderNote);
+
+let extraItems = []; // { id, name, month, amount, note }
+let extraIdCounter = 0;
+const extraList = document.getElementById("extraList");
+const btnAddExtra = document.getElementById("btnAddExtra");
+
+function addExtraRow(prefill){
+  const item = Object.assign({ id: "ex" + (extraIdCounter++), name:"", month: monthSel.value || "1月", amount:"", note:"" }, prefill||{});
+  extraItems.push(item);
+  renderExtraList();
+}
+
+function renderExtraList(){
+  extraList.innerHTML = "";
+  extraItems.forEach(item=>{
+    const row = document.createElement("div");
+    row.className = "extra-row";
+
+    const nameInput = document.createElement("input");
+    nameInput.placeholder = "姓名（需與名冊一致）";
+    nameInput.value = item.name;
+    nameInput.addEventListener("input", ()=>{ item.name = nameInput.value; render(); });
+
+    const monthSelect = document.createElement("select");
+    monthsAll.forEach(mo=>{
+      const o = document.createElement("option"); o.value = mo; o.textContent = mo;
+      if(mo === item.month) o.selected = true;
+      monthSelect.appendChild(o);
+    });
+    monthSelect.addEventListener("change", ()=>{ item.month = monthSelect.value; render(); });
+
+    const amountInput = document.createElement("input");
+    amountInput.type = "number";
+    amountInput.placeholder = "金額";
+    amountInput.value = item.amount;
+    amountInput.addEventListener("input", ()=>{ item.amount = amountInput.value; render(); });
+
+    const noteInputEl = document.createElement("input");
+    noteInputEl.placeholder = "備註（例如：代墊交通費）";
+    noteInputEl.value = item.note;
+    noteInputEl.addEventListener("input", ()=>{ item.note = noteInputEl.value; render(); });
+
+    const rmBtn = document.createElement("button");
+    rmBtn.className = "rm";
+    rmBtn.textContent = "✕";
+    rmBtn.addEventListener("click", ()=>{
+      extraItems = extraItems.filter(i=>i.id!==item.id);
+      renderExtraList();
+      render();
+    });
+
+    row.appendChild(nameInput);
+    row.appendChild(monthSelect);
+    row.appendChild(amountInput);
+    row.appendChild(noteInputEl);
+    row.appendChild(rmBtn);
+    extraList.appendChild(row);
+  });
+}
+
+btnAddExtra.addEventListener("click", ()=>addExtraRow());
 
 fileInput.addEventListener("change", handleFile);
 
@@ -199,7 +276,8 @@ function render(){
   document.getElementById("headName").textContent = person + " 薪資條";
   document.getElementById("headMonth").textContent = year + "年 " + month;
   const rows = (DATA[year]||[]).filter(r=>r.person===person && Number(r[month])>0);
-  if(rows.length===0){
+  const matchedExtras = extraItems.filter(e => e.name.trim()===person.trim() && e.month===month && parseFloat(e.amount) > 0);
+  if(rows.length===0 && matchedExtras.length===0){
     content.innerHTML = "<div class=\"empty\">此月份無薪資紀錄</div>";
     btnPng.disabled = true; btnPdf.disabled = true;
     return;
@@ -210,6 +288,12 @@ function render(){
     const amt = Number(r[month]);
     total += amt;
     body += "<tr><td>"+r.item+"</td><td><span class=\"tag\">"+r.freq+"</span></td><td>"+r.method+"</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
+  });
+  matchedExtras.forEach(e=>{
+    const amt = parseFloat(e.amount) || 0;
+    total += amt;
+    const label = e.note && e.note.trim() ? e.note.trim() : "額外加給";
+    body += "<tr><td>"+label+"</td><td><span class=\"tag extra-tag\">額外加給</span></td><td>—</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
   });
   body += "</tbody><tfoot><tr><td colspan=\"3\">總額</td><td class=\"amt\">NT$ "+total.toLocaleString()+"</td></tr></tfoot></table>";
   body += "<div class=\"note-display\" id=\"noteDisplay\"></div>";
