@@ -311,8 +311,8 @@ function render(){
   matchedExtras.forEach(e=>{
     const amt = parseFloat(e.amount) || 0;
     total += amt;
-    const label = e.note && e.note.trim() ? e.note.trim() : "額外加給";
-    body += "<tr><td>"+label+"</td><td><span class=\"tag extra-tag\">額外加給</span></td><td>—</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
+    const label = e.note && e.note.trim() ? e.note.trim() : "代墊款";
+    body += "<tr><td>"+label+"</td><td><span class=\"tag extra-tag\">代墊款</span></td><td>—</td><td class=\"amt\">"+amt.toLocaleString()+"</td></tr>";
   });
   body += "</tbody><tfoot><tr><td colspan=\"3\">總額</td><td class=\"amt\">NT$ "+total.toLocaleString()+"</td></tr></tfoot></table>";
   body += "<div class=\"note-display\" id=\"noteDisplay\"></div>";
