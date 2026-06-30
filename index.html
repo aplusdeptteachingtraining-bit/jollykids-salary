@@ -114,9 +114,15 @@ const extraList = document.getElementById("extraList");
 const btnAddExtra = document.getElementById("btnAddExtra");
 
 function addExtraRow(prefill){
-  const item = Object.assign({ id: "ex" + (extraIdCounter++), name:"", month: monthSel.value || "1月", amount:"", note:"" }, prefill||{});
+  const item = Object.assign({ id: "ex" + (extraIdCounter++), name: personSel.value || "", month: monthSel.value || "1月", amount:"", note:"" }, prefill||{});
   extraItems.push(item);
   renderExtraList();
+}
+
+function getAllPersonsAcrossYears(){
+  const set = new Set();
+  Object.values(DATA).forEach(rows=>rows.forEach(r=>set.add(r.person)));
+  return [...set].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
 }
 
 function renderExtraList(){
@@ -125,10 +131,22 @@ function renderExtraList(){
     const row = document.createElement("div");
     row.className = "extra-row";
 
-    const nameInput = document.createElement("input");
-    nameInput.placeholder = "姓名（需與名冊一致）";
-    nameInput.value = item.name;
-    nameInput.addEventListener("input", ()=>{ item.name = nameInput.value; render(); });
+    const nameInput = document.createElement("select");
+    const allPersons = getAllPersonsAcrossYears();
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = "選擇姓名";
+    nameInput.appendChild(placeholderOpt);
+    allPersons.forEach(p=>{
+      const o = document.createElement("option"); o.value = p; o.textContent = p;
+      if(p === item.name) o.selected = true;
+      nameInput.appendChild(o);
+    });
+    if(item.name && !allPersons.includes(item.name)){
+      const o = document.createElement("option"); o.value = item.name; o.textContent = item.name + "（不在名冊中）"; o.selected = true;
+      nameInput.appendChild(o);
+    }
+    nameInput.addEventListener("change", ()=>{ item.name = nameInput.value; render(); });
 
     const monthSelect = document.createElement("select");
     monthsAll.forEach(mo=>{
@@ -242,6 +260,7 @@ function parseWorkbook(wb){
   monthsAll.forEach(mo=>{ const o=document.createElement("option"); o.value=mo; o.textContent=mo; monthSel.appendChild(o); });
   monthSel.disabled = false;
   updatePersons();
+  renderExtraList();
   render();
 }
 
